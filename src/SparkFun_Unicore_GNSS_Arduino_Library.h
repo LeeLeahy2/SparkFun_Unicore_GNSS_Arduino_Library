@@ -161,6 +161,8 @@ class UM980
     Um980Result updateDateTime(uint16_t maxWaitMs = 1500);
 
     Print *_debugPort = nullptr; // The stream to send debug messages to if enabled. Usually Serial.
+    SEMP_OUTPUT debugOutput = nullptr; // Address of a routine to display a debug character
+    SEMP_OUTPUT errorOutput = nullptr; // Address of a routine to display an error character
 
     SEMP_PARSE_STATE *_sempParse; // State of the SparkFun Extensible Message Parser
 
@@ -191,7 +193,11 @@ class UM980
     // achieved
     bool startBinaryBeforeFix = true;
 
-    bool begin(HardwareSerial &serialPort, Print *parserDebug = nullptr, Print *parserError = &Serial);
+    bool begin(HardwareSerial &serialPort,
+               const char * parserName,
+               SEMP_OUTPUT errorOutput = nullptr,
+               Print *parserDebug = nullptr,
+               SEMP_OUTPUT debugOutput = nullptr);
     bool isConnected();
     bool isBlocking();
     bool update();
@@ -201,9 +207,9 @@ class UM980
     void enableDebugging(Print &debugPort = Serial);
     void disableDebugging();
 
-    void enableParserDebug(Print *print = &Serial);
+    void enableParserDebug(SEMP_OUTPUT debugOutput);
     void disableParserDebug();
-    void enableParserErrors(Print *print = &Serial);
+    void enableParserErrors(SEMP_OUTPUT errorOutput);
     void disableParserErrors();
 
     void enableBinaryBeforeFix();
@@ -217,7 +223,7 @@ class UM980
     void disablePrintRxMessages();
     void enableRxMessageDump();
     void disableRxMessageDump();
-    void printParserConfiguration(Print *print = &Serial);
+    void printParserConfiguration(SEMP_OUTPUT output);
 
     void dumpBuffer(const uint8_t *buffer, uint16_t length);
 

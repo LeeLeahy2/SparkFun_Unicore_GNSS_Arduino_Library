@@ -32,24 +32,20 @@
 #define pin_UART_RX     13
 
 // Build the table listing all of the parsers
-SEMP_PARSE_ROUTINE const parserTable[] =
+const SEMP_PARSER_DESCRIPTION * parserTable[] =
 {
-    sempRtcmPreamble
+    &sempRtcmParserDescription
 };
 const int parserCount = sizeof(parserTable) / sizeof(parserTable[0]);
-
-const char * const parserNames[] =
-{
-    "RTCM parser"
-};
-const int parserNameCount = sizeof(parserNames) / sizeof(parserNames[0]);
 
 //----------------------------------------
 // Locals
 //----------------------------------------
 
-SEMP_PARSE_STATE *parse;
+uint8_t * buffer;
+size_t bufferLength;
 UM980 myGNSS;
+SEMP_PARSE_STATE *parse;
 
 HardwareSerial SerialGNSS(1); //Use UART1 on the ESP32
 
@@ -61,19 +57,20 @@ void setup()
   Serial.println("SparkFun UM980 Example 5");
 
   // Initialize the parser
-  parse = sempBeginParser(parserTable, parserCount,
-                          parserNames, parserNameCount,
-                          0, 3000, processMessage, "RTCM_Test");
+  bufferLength = sempGetBufferLength(parserTable, parserCount, 0);
+  buffer = (uint8_t *)malloc(bufferLength);
+  parse = sempBeginParser("RTCM_Test", parserTable, parserCount,
+                          buffer ,bufferLength, processMessage, output);
   if (!parse)
     reportFatalError("Failed to initialize the parser");
-  sempEnableDebugOutput(parse);
+  sempDebugOutputEnable(parse, output);
 
   //We must start the serial port before using it in the library
   SerialGNSS.begin(115200, SERIAL_8N1, pin_UART_RX, pin_UART_TX);
 
   myGNSS.enableDebugging(); // Print all debug to Serial
 
-  if (myGNSS.begin(SerialGNSS) == false) //Give the serial port over to the library
+  if (myGNSS.begin(SerialGNSS, "SFE_Unicore_GNSS_Library", output) == false) //Give the serial port over to the library
   {
     Serial.println("UM980 failed to respond. Check ports and baud rates.");
     while (1);
@@ -107,7 +104,6 @@ void loop()
 // Process a complete message incoming from parser
 void processMessage(SEMP_PARSE_STATE *parse, uint16_t type)
 {
-  SEMP_SCRATCH_PAD *scratchPad = (SEMP_SCRATCH_PAD *)parse->scratchPad;
   static bool displayOnce = true;
 
   // Display the raw message
@@ -182,4 +178,30 @@ void reportFatalError(const char *errorMsg)
     Serial.println();
     sleep(15);
   }
+}
+
+//----------------------------------------
+// Output a buffer of data
+//
+// Inputs:
+//   buffer: Address of a buffer of data to output
+//   length: Number of bytes of data to output
+//----------------------------------------
+void output(uint8_t * buffer, size_t length)
+{
+    size_t bytesWritten;
+
+    if (Serial)
+    {
+        while (length)
+        {
+            // Wait until space is available in the FIFO
+            while (Serial.availableForWrite() == 0);
+
+            // Output the character
+            bytesWritten = Serial.write(buffer, length);
+            buffer += bytesWritten;
+            length -= bytesWritten;
+        }
+    }
 }
