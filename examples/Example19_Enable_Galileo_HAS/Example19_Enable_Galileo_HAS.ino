@@ -5,7 +5,7 @@
   Date: May 9th, 2024
   License: MIT. Please see LICENSE.md for more information.
 
-  The UM980 is capable of receiving the new Galileo E6 signal and obtain a sub 0.2m precision 
+  The UM980 is capable of receiving the new Galileo E6 signal and obtain a sub 0.2m precision
   location fix. This example shows how to enable E6 and HAS
 
   These examples are targeted for an ESP32 platform but any platform that has multiple
@@ -55,7 +55,7 @@ void setup()
 
   //myGNSS.enableDebugging(); // Print all debug to Serial
 
-  if (myGNSS.begin(SerialGNSS) == false) //Give the serial port over to the library
+  if (myGNSS.begin(SerialGNSS, "SFE_Unicore_GNSS_Library", output) == false) //Give the serial port over to the library
   {
     Serial.println("UM980 failed to respond. Check ports and baud rates. Freezing...");
     while (true);
@@ -227,4 +227,19 @@ void um980Reset()
   }
 
   Serial.println("UM980 has completed reset");
+}
+
+//----------------------------------------
+// Output a character
+//
+// Inputs:
+//   character: The character to output
+//----------------------------------------
+void output(char character)
+{
+    // Wait until space is available in the FIFO
+    while (Serial.availableForWrite() == 0);
+
+    // Output the character
+    Serial.write(character);
 }

@@ -42,7 +42,7 @@ void setup()
 
   myGNSS.enableDebugging(); // Print all debug to Serial
 
-  if (myGNSS.begin(SerialGNSS) == false) //Give the serial port over to the library
+  if (myGNSS.begin(SerialGNSS, "SFE_Unicore_GNSS_Library", output) == false) //Give the serial port over to the library
   {
     Serial.println("UM980 failed to respond. Check ports and baud rates. Freezing...");
     while (true);
@@ -64,4 +64,19 @@ void setup()
 void loop()
 {
 
+}
+
+//----------------------------------------
+// Output a character
+//
+// Inputs:
+//   character: The character to output
+//----------------------------------------
+void output(char character)
+{
+    // Wait until space is available in the FIFO
+    while (Serial.availableForWrite() == 0);
+
+    // Output the character
+    Serial.write(character);
 }
