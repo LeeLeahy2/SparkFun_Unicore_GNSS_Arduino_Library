@@ -82,11 +82,11 @@ void setup()
   myGNSS.setModeRoverSurvey();
 
   //Enable the basic 5 NMEA sentences including GGA for the NTRIP Caster at 1Hz
-  myGNSS.setNMEAPortMessage("GPGGA", 1);
-  myGNSS.setNMEAPortMessage("GPGSA", 1);
-  myGNSS.setNMEAPortMessage("GPGST", 1);
-  myGNSS.setNMEAPortMessage("GPGSV", 1);
-  myGNSS.setNMEAPortMessage("GPRMC", 1);
+  myGNSS.setNMEAMessage("GPGGA", 1);
+  myGNSS.setNMEAMessage("GPGSA", 1);
+  myGNSS.setNMEAMessage("GPGST", 1);
+  myGNSS.setNMEAMessage("GPGSV", 1);
+  myGNSS.setNMEAMessage("GPRMC", 1);
 
   myGNSS.saveConfiguration(); //Save the current configuration into non-volatile memory (NVM)
 
