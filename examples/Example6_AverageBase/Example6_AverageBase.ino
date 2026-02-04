@@ -32,28 +32,24 @@ int pin_UART1_RX = 13;
 #define RTCM_PARSER_INDEX           1
 
 // Build the table listing all of the parsers
-SEMP_PARSE_ROUTINE const parserTable[] =
+const SEMP_PARSER_DESCRIPTION * parserTable[] =
 {
-    sempNmeaPreamble,
-    sempRtcmPreamble,
+    &sempNmeaParserDescription,
+    &sempRtcmParserDescription,
 };
 const int parserCount = sizeof(parserTable) / sizeof(parserTable[0]);
-
-const char * const parserNames[] =
-{
-    "NMEA Parser",
-    "RTCM Parser",
-};
-const int parserNameCount = sizeof(parserNames) / sizeof(parserNames[0]);
 
 SEMP_PARSE_STATE *parse;               // State of the parsers
 
 UM980 myGNSS;
 
 HardwareSerial SerialGNSS(1); //Use UART1 on the ESP32
+uint8_t * buffer;
 
 void setup()
 {
+  size_t bufferLength;
+
   Serial.begin(115200);
   delay(250);
   Serial.println();
@@ -64,7 +60,7 @@ void setup()
 
   myGNSS.enableDebugging(); // Print all debug to Serial
 
-  if (myGNSS.begin(SerialGNSS) == false) //Give the serial port over to the library
+  if (myGNSS.begin(SerialGNSS, "SFE_Unicore_GNSS_Library", output) == false) //Give the serial port over to the library
   {
     Serial.println("UM980 failed to respond. Check ports and baud rates. Freezing...");
     while (true);
@@ -106,9 +102,10 @@ void setup()
   myGNSS.saveConfiguration(); //Save the current configuration into non-volatile memory (NVM)
 
   // Initialize the parser
-  parse = sempBeginParser(parserTable, parserCount,
-                          parserNames, parserNameCount,
-                          0, 3000, processMessage, "Example 17 Parser");
+  bufferLength = sempGetBufferLength(parserTable, parserCount, 0);
+  buffer = (uint8_t *)malloc(bufferLength);
+  parse = sempBeginParser("Example 6 Parser", parserTable, parserCount,
+                          buffer, bufferLength, processMessage, output);
   if (!parse)
     while (1)
     {
@@ -137,14 +134,11 @@ void loop()
 // Process a complete message incoming from parser
 void processMessage(SEMP_PARSE_STATE *parse, uint16_t type)
 {
-  SEMP_SCRATCH_PAD *scratchPad = (SEMP_SCRATCH_PAD *)parse->scratchPad;
-  char *typeName;
-
   // Display the raw message
   // The type value is the index into the raw data array
   Serial.println();
   Serial.printf("Valid %s message: 0x%04x (%d) bytes\r\n",
-                parserNames[type], parse->length, parse->length);
+                parse->parsers[type]->parserName, parse->length, parse->length);
   dumpBuffer(parse->buffer, parse->length);
 }
 
@@ -195,4 +189,30 @@ void dumpBuffer(const uint8_t *buffer, uint16_t length)
     buffer += bytes;
     offset += bytes;
   }
+}
+
+//----------------------------------------
+// Output a buffer of data
+//
+// Inputs:
+//   buffer: Address of a buffer of data to output
+//   length: Number of bytes of data to output
+//----------------------------------------
+void output(uint8_t * buffer, size_t length)
+{
+    size_t bytesWritten;
+
+    if (Serial)
+    {
+        while (length)
+        {
+            // Wait until space is available in the FIFO
+            while (Serial.availableForWrite() == 0);
+
+            // Output the character
+            bytesWritten = Serial.write(buffer, length);
+            buffer += bytesWritten;
+            length -= bytesWritten;
+        }
+    }
 }

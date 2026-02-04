@@ -29,21 +29,13 @@
 #define UM980_UNICORE_BINARY_PARSER_INDEX 3
 
 // Build the table listing all of the parsers
-SEMP_PARSE_ROUTINE const parserTable[] = {
-    sempNmeaPreamble,
-    sempUnicoreHashPreamble,
-    sempRtcmPreamble,
-    sempUnicoreBinaryPreamble,
+static const SEMP_PARSER_DESCRIPTION * unicoreParserTable[] = {
+    &sempNmeaParserDescription,
+    &sempUnicoreHashParserDescription,
+    &sempRtcmParserDescription,
+    &sempUnicoreBinaryParserDescription,
 };
-const int parserCount = sizeof(parserTable) / sizeof(parserTable[0]);
-
-const char *const parserNames[] = {
-    "UN980 NMEA Parser",
-    "UM980 Unicore Hash (#) Parser",
-    "UM980 RTCM Parser",
-    "UM980 Unicore Binary Parser",
-};
-const int parserNameCount = sizeof(parserNames) / sizeof(parserNames[0]);
+static const int unicoreParserCount = sizeof(unicoreParserTable) / sizeof(unicoreParserTable[0]);
 
 // Account for the largest message
 #define BUFFER_LENGTH 3000
@@ -103,70 +95,60 @@ bool badNmeaChecksum(SEMP_PARSE_STATE *parse)
 // Translate the state value into an ASCII state name
 const char *um980GetStateName(SEMP_PARSE_STATE *parse)
 {
-    const char *name;
-
-    do
-    {
-        name = sempNmeaGetStateName(parse);
-        if (name)
-            break;
-        name = sempRtcmGetStateName(parse);
-        if (name)
-            break;
-        name = sempUnicoreBinaryGetStateName(parse);
-        if (name)
-            break;
-        name = sempUnicoreHashGetStateName(parse);
-        if (name)
-            break;
-        name = sempGetStateName(parse);
-    } while (0);
-    return name;
+    return sempGetStateName(parse);
 }
 
 // Disable debug output from the parser
 void UM980::disableParserDebug()
 {
-    sempDisableDebugOutput(_sempParse);
+    sempDebugOutputDisable(_sempParse);
 }
 
 // Enable debug output from the parser
-void UM980::enableParserDebug(Print *print)
+void UM980::enableParserDebug(SEMP_OUTPUT debugOutput)
 {
-    sempEnableDebugOutput(_sempParse, print);
+    sempDebugOutputEnable(_sempParse, debugOutput);
 }
 
 // Disable debug output from the parser
 void UM980::disableParserErrors()
 {
-    sempDisableDebugOutput(_sempParse);
+    sempDebugOutputDisable(_sempParse);
 }
 
 // Enable debug output from the parser
-void UM980::enableParserErrors(Print *print)
+void UM980::enableParserErrors(SEMP_OUTPUT errorOutput)
 {
-    sempEnableErrorOutput(_sempParse, print);
+    sempErrorOutputEnable(_sempParse, errorOutput);
 }
 
 // Print the UM980 parser configuration
-void UM980::printParserConfiguration(Print *print)
+void UM980::printParserConfiguration(SEMP_OUTPUT output)
 {
-    sempPrintParserConfiguration(_sempParse, print);
+    sempPrintParserConfiguration(_sempParse, output);
 }
 
 //----------------------------------------
 // UM980 support routines
 //----------------------------------------
 
-bool UM980::begin(HardwareSerial &serialPort, Print *parserDebug, Print *parserError)
+bool UM980::begin(HardwareSerial &serialPort,
+                  const char * parserName,
+                  SEMP_OUTPUT errorOutput /* = nullptr */,
+                  Print *parserDebug /* = nullptr */,
+                  SEMP_OUTPUT debugOutput /* = nullptr */)
 {
     ptrUM980 = this;
     _hwSerialPort = &serialPort;
+    _debugPort = parserDebug;
 
     // Initialize the parser
+    size_t bufferLength = sempGetBufferLength(unicoreParserTable, unicoreParserCount, BUFFER_LENGTH);
+    uint8_t * buffer = (uint8_t *)malloc(bufferLength);
     _sempParse =
-        sempBeginParser(parserTable, parserCount, parserNames, parserNameCount, 0, BUFFER_LENGTH, um980ProcessMessage,
-                        "SFE_Unicore_GNSS_Library", parserError, parserDebug, badNmeaChecksum);
+        sempBeginParser(parserName, unicoreParserTable, unicoreParserCount,
+                        buffer, bufferLength, um980ProcessMessage, errorOutput,
+                        debugOutput, badNmeaChecksum);
     if (!_sempParse)
     {
         debugPrintf("Unicore Lib: Failed to initialize the parser!");
@@ -176,7 +158,9 @@ bool UM980::begin(HardwareSerial &serialPort, Print *parserDebug, Print *parserE
     // We assume the user has started the serial port with proper pins and baud rate prior to calling begin()
     if (isConnected() == false)
     {
-        sempStopParser(&_sempParse);
+        // Done with the parser
+        _sempParse = nullptr;
+        free(buffer);
         return false;
     }
     return (true);
@@ -355,7 +339,7 @@ void UM980::disableRxMessageDump()
 // Process a complete message incoming from parser
 void um980ProcessMessage(SEMP_PARSE_STATE *parse, uint16_t type)
 {
-    SEMP_SCRATCH_PAD *scratchPad = (SEMP_SCRATCH_PAD *)parse->scratchPad;
+    const char * sentenceName;
 
     if (ptrUM980->_printRxMessages)
     {
@@ -400,7 +384,8 @@ void um980ProcessMessage(SEMP_PARSE_STATE *parse, uint16_t type)
 
     case UM980_UNICORE_HASH_PARSER_INDEX:
         // Does this response contain the command we are looking for?
-        if (strcasecmp((char *)scratchPad->unicoreHash.sentenceName, ptrUM980->commandName) == 0) // Found
+        sentenceName = sempUnicoreHashGetSentenceName(parse);
+        if (strcasecmp(sentenceName, ptrUM980->commandName) == 0) // Found
         {
             ptrUM980->debugPrintf("Hash response: %s", parse->buffer);
             ptrUM980->modeHandler(parse->buffer, parse->length);
@@ -411,14 +396,14 @@ void um980ProcessMessage(SEMP_PARSE_STATE *parse, uint16_t type)
     case UM980_NMEA_PARSER_INDEX:
 
         // Is this a NMEA response or command response?
-
-        if (strcasecmp((char *)scratchPad->nmea.sentenceName, "command") != 0 &&
-            strcasecmp((char *)scratchPad->nmea.sentenceName, "MASK") != 0 &&
-            strcasecmp((char *)scratchPad->nmea.sentenceName, "CONFIG") != 0)
+        sentenceName = sempNmeaGetSentenceName(parse);
+        if (strcasecmp(sentenceName, "command") != 0 &&
+            strcasecmp(sentenceName, "MASK") != 0 &&
+            strcasecmp(sentenceName, "CONFIG") != 0)
         {
             // command, MASK, CONFIG not found
 
-            if (strcasecmp((char *)scratchPad->nmea.sentenceName, "GNGGA") == 0)
+            if (strcasecmp(sentenceName, "GNGGA") == 0)
             {
                 ptrUM980->debugPrintf("um980ProcessMessage GNGGA");
             }
@@ -1869,7 +1854,7 @@ void UM980::modeHandler(uint8_t *response, uint16_t length)
                 modeType = UM980_MODE_ROVER_SURVEY;
                 return;
             }
-            
+
             typePointer = strcasestr(responsePointer, "UAV");
             if (typePointer != nullptr) // Found
             {
