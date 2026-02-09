@@ -24,23 +24,14 @@ int pin_UART1_RX = 13;
 #define UNICORE_BINARY_PARSER_INDEX 3
 
 // Build the table listing all of the parsers
-SEMP_PARSE_ROUTINE const parserTable[] =
+const SEMP_PARSER_DESCRIPTION * parserTable[] =
 {
-    sempNmeaPreamble,
-    sempUnicoreHashPreamble,
-    sempRtcmPreamble,
-    sempUnicoreBinaryPreamble,
+    &sempNmeaParserDescription,
+    &sempUnicoreHashParserDescription,
+    &sempRtcmParserDescription,
+    &sempUnicoreBinaryParserDescription,
 };
 const int parserCount = sizeof(parserTable) / sizeof(parserTable[0]);
-
-const char * const parserNames[] =
-{
-    "NMEA Parser",
-    "Unicore Hash (#) Parser",
-    "RTCM Parser",
-    "Unicore Binary Parser",
-};
-const int parserNameCount = sizeof(parserNames) / sizeof(parserNames[0]);
 
 #define CONVERT_TO_C_BYTES_PER_LINE     8 // Must be a power of 2
 #define CONVERT_TO_C_BYTES_PER_MASK     (CONVERT_TO_C_BYTES_PER_LINE - 1)
@@ -59,6 +50,7 @@ uint32_t dataOffset;                   // Offset in rawDataStream array
 int32_t offset;                        // invalidCharacterBuffer offset
 uint8_t invalidCharacterBuffer[20000]; // Data that was not parsed
 SEMP_PARSE_STATE *parse;               // State of the parsers
+uint8_t * buffer;
 
 //----------------------------------------
 // UM980 Initialization Example
@@ -66,6 +58,8 @@ SEMP_PARSE_STATE *parse;               // State of the parsers
 
 void setup()
 {
+    size_t bufferLength;
+
     Serial.begin(115200);
     delay(250);
     Serial.println();
@@ -84,7 +78,7 @@ void setup()
 //    myGNSS.enableRxMessageDump();
 
     // Initialize the Unicore GNSS
-    if (myGNSS.begin(SerialGNSS) == false) //Give the serial port over to the library
+    if (myGNSS.begin(SerialGNSS, "SFE_Unicore_GNSS_Library", output) == false) //Give the serial port over to the library
     {
         Serial.println("UM980 failed to respond. Check ports and baud rates. Freezing...");
         while (true);
@@ -136,22 +130,23 @@ void setup()
         Serial.println("BESTNAVB error");
 
     // Initialize the parser
-    parse = sempBeginParser(parserTable, parserCount,
-                            parserNames, parserNameCount,
-                            0, 3000, processMessage, "Example 17 Parser");
+    bufferLength = sempGetBufferLength(parserTable, parserCount, 0);
+    buffer = (uint8_t *)malloc(bufferLength);
+    parse = sempBeginParser("Example 17 Parser", parserTable, parserCount,
+                            buffer, bufferLength, processMessage, output);
     if (!parse)
         reportFatalError("Failed to initialize the parser");
 
     if (COMPILE_CAPTURE_RAW_DATA_STREAM)
     {
         // Disable parser output
-        sempDisableErrorOutput(parse);
+        sempErrorOutputDisable(parse);
         Serial.println("const uint8_t rawDataStream[] =");
         Serial.println("{");
     }
     else
         // Enable debugging for the parser
-        sempEnableDebugOutput(parse);
+        sempDebugOutputEnable(parse, output);
 
     Serial.println("Mixture of NMEA, RTCM, and UM980 binary now reporting. Have fun!");
     Serial.println("----------------------------------------------------------------");
@@ -175,9 +170,9 @@ void loop()
             invalidCharacterBuffer[offset++] = incoming;
 
         // Parse this byte
-        startState = getParseStateName(parse);
+        startState = sempGetStateName(parse);
         sempParseNextByte(parse, incoming);
-        endState = getParseStateName(parse);
+        endState = sempGetStateName(parse);
 
         // Build a rawDataStream array
         if (COMPILE_CAPTURE_RAW_DATA_STREAM)
@@ -296,7 +291,6 @@ void reportFatalError(const char *errorMsg)
 // Process a complete message incoming from parser
 void processMessage(SEMP_PARSE_STATE *parse, uint16_t type)
 {
-    SEMP_SCRATCH_PAD *scratchPad = (SEMP_SCRATCH_PAD *)parse->scratchPad;
     char *typeName;
 
     // Dump the received messages
@@ -315,36 +309,9 @@ void processMessage(SEMP_PARSE_STATE *parse, uint16_t type)
         // The type value is the index into the raw data array
         Serial.println();
         Serial.printf("Valid %s message: 0x%04x (%d) bytes\r\n",
-                parserNames[type], parse->length, parse->length);
+                parse->parsers[type]->parserName, parse->length, parse->length);
         dumpBuffer(parse->buffer, parse->length);
     }
-}
-
-// Translate the state value into an ASCII state name
-const char *getParseStateName(SEMP_PARSE_STATE *parse)
-{
-    const char *name;
-
-    do
-    {
-        name = sempNmeaGetStateName(parse);
-        if (name)
-            break;
-        name = sempNmeaGetStateName(parse);
-        if (name)
-            break;
-        name = sempRtcmGetStateName(parse);
-        if (name)
-            break;
-        name = sempUnicoreBinaryGetStateName(parse);
-        if (name)
-            break;
-        name = sempUnicoreHashGetStateName(parse);
-        if (name)
-            break;
-        name = sempGetStateName(parse);
-    } while (0);
-    return name;
 }
 
 //----------------------------------------
@@ -412,4 +379,30 @@ void convertToC(uint8_t data)
     // Add the comment at the end of the line
     if (!(dataOffset & CONVERT_TO_C_BYTES_PER_MASK))
         convertToCComment(false);
+}
+
+//----------------------------------------
+// Output a buffer of data
+//
+// Inputs:
+//   buffer: Address of a buffer of data to output
+//   length: Number of bytes of data to output
+//----------------------------------------
+void output(uint8_t * buffer, size_t length)
+{
+    size_t bytesWritten;
+
+    if (Serial)
+    {
+        while (length)
+        {
+            // Wait until space is available in the FIFO
+            while (Serial.availableForWrite() == 0);
+
+            // Output the character
+            bytesWritten = Serial.write(buffer, length);
+            buffer += bytesWritten;
+            length -= bytesWritten;
+        }
+    }
 }

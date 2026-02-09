@@ -70,7 +70,7 @@ void setup()
 
   //myGNSS.enableDebugging(); // Print all debug to Serial
 
-  if (myGNSS.begin(SerialGNSS) == false) //Give the serial port over to the library
+  if (myGNSS.begin(SerialGNSS, "SFE_Unicore_GNSS_Library", output) == false) //Give the serial port over to the library
   {
     Serial.println("UM980 failed to respond. Check ports and baud rates.");
     while (1);
@@ -82,11 +82,11 @@ void setup()
   myGNSS.setModeRoverSurvey();
 
   //Enable the basic 5 NMEA sentences including GGA for the NTRIP Caster at 1Hz
-  myGNSS.setNMEAPortMessage("GPGGA", 1);
-  myGNSS.setNMEAPortMessage("GPGSA", 1);
-  myGNSS.setNMEAPortMessage("GPGST", 1);
-  myGNSS.setNMEAPortMessage("GPGSV", 1);
-  myGNSS.setNMEAPortMessage("GPRMC", 1);
+  myGNSS.setNMEAMessage("GPGGA", 1);
+  myGNSS.setNMEAMessage("GPGSA", 1);
+  myGNSS.setNMEAMessage("GPGST", 1);
+  myGNSS.setNMEAMessage("GPGSV", 1);
+  myGNSS.setNMEAMessage("GPRMC", 1);
 
   myGNSS.saveConfiguration(); //Save the current configuration into non-volatile memory (NVM)
 
@@ -376,4 +376,30 @@ void processNMEA(char incoming)
       ggaSentenceStarted = false;
     }
   }
+}
+
+//----------------------------------------
+// Output a buffer of data
+//
+// Inputs:
+//   buffer: Address of a buffer of data to output
+//   length: Number of bytes of data to output
+//----------------------------------------
+void output(uint8_t * buffer, size_t length)
+{
+    size_t bytesWritten;
+
+    if (Serial)
+    {
+        while (length)
+        {
+            // Wait until space is available in the FIFO
+            while (Serial.availableForWrite() == 0);
+
+            // Output the character
+            bytesWritten = Serial.write(buffer, length);
+            buffer += bytesWritten;
+            length -= bytesWritten;
+        }
+    }
 }
