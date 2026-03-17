@@ -86,9 +86,9 @@ void setup()
     Serial.println("UM980 detected!");
 
     // Enable low level debugging for the parser in the Unicore GNSS library
-//    myGNSS.enableParserDebug();
-//    myGNSS.enableParserErrors();
-//    myGNSS.printParserConfiguration();
+//    myGNSS.enableParserDebug(output);
+//    myGNSS.enableParserErrors(output);
+//    myGNSS.printParserConfiguration(output);
 
     // Clear saved configurations, satellite ephemerides, position information, and reset baud rate to 115200bps.
     resetUM980();
