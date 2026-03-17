@@ -1318,36 +1318,55 @@ void UM980::unicoreHandler(uint8_t *response, uint16_t length)
         // Is this a NMEA sentence?
         if (response[0] == '$')
         {
-            response[length] = '\0'; // Force terminator because strncasestr does not exist
-
-            // The UM980 does not respond to binary requests when there is no GNSS reception.
-            // Block BestNavB, etc commands if there is no fix.
-            // Look for GNGGA NMEA then extract GNSS position status (spot 6).
-            // $GNGGA,181535.00,,,,,0,00,9999.0,,,,,,*43
-            char *responsePointer = strcasestr((char *)response, "GNGGA");
-            if (responsePointer != nullptr) // Found
+            // Use a do-while(0) so we can break
+            do
             {
-                char gngga[100];
-                strncpy(gngga, (const char *)response, length - 1); // Make copy before strtok
+                const uint16_t maxLength = 120;
+                char gngga[maxLength + 1];
 
-                debugPrintf("Unicore Lib: GNGGA message: %s\r\n", gngga);
-
-                char *pt;
-                pt = strtok(gngga, ",");
-                int counter = 0;
-                while (pt != NULL)
+                if (length > maxLength)
                 {
-                    int spotValue = atoi(pt);
-                    if (counter++ == 6)
-                        nmeaPositionStatus = spotValue;
-                    pt = strtok(NULL, ",");
+                    debugPrintf("Unicore Lib: NMEA message too long: %d\r\n", length);
+                    break;
                 }
-            }
-            else
-            {
-                // Unhandled NMEA message
-                // debugPrintf("Unicore Lib: Unhandled NMEA sentence (%d bytes): %s\r\n", length, (char *)response);
-            }
+
+                strncpy(gngga, (const char *)response, length); // Make copy before strtok
+                gngga[length] = '\0'; // Force terminator because strncasestr does not exist
+
+                // The UM980 does not respond to binary requests when there is no GNSS reception.
+                // Block BestNavB, etc commands if there is no fix.
+                // Look for GNGGA NMEA then extract GNSS position status (spot 6).
+                // $GNGGA,181535.00,,,,,0,00,9999.0,,,,,,*43
+                char *responsePointer = strcasestr((char *)gngga, "GNGGA");
+                if (responsePointer != nullptr) // Found
+                {
+                    debugPrintf("Unicore Lib: GNGGA message: %s\r\n", gngga);
+
+                    // A health warning about strtok:
+                    // strtok will convert any delimiters it finds ("," in our case) into NULL characters.
+                    // Also, be very careful that you do not use strtok within an strtok while loop.
+                    // The next call of strtok(NULL, ...) in the outer loop will use the pointer saved from the inner loop!
+                    // The same is true for tasks!
+                    // The solution is to use strtok_r - the reentrant version of strtok
+
+                    char *preservedPointer;
+                    char *pt;
+                    pt = strtok_r(gngga, ",", &preservedPointer); // This will blow the , away
+                    int counter = 0;
+                    while ((pt != NULL) && (counter <= 6)) // Stop after spot 6
+                    {
+                        int spotValue = atoi(pt);
+                        if (counter++ == 6) // If this is spot 6, save value into status. Post-increment counter
+                            nmeaPositionStatus = spotValue;
+                        pt = strtok_r(NULL, ",", &preservedPointer); // This will blow the , away
+                    }
+                }
+                else
+                {
+                    // Unhandled NMEA message
+                    // debugPrintf("Unicore Lib: Unhandled NMEA sentence (%d bytes): %s\r\n", length, (char *)response);
+                }
+            } while (0);
         }
         else
         {
